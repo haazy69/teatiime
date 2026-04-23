@@ -1,0 +1,322 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== 2026 DESIGN TOKENS =====
+   Direction: "warm editorial" — warm bone-white paper feel,
+   inked serif display, organic clay accents. Anti-SaaS.
+   Inspired by: Kinfolk, Aesop, Blinkit's spatial density,
+   but with more soul — grain, noise, warmth, physicality.
+*/
+
+:root {
+  --bone: #f5f1ea;
+  --cream: #faf6ee;
+  --ink: #0a0a0a;
+  --smoke: #3a3a3a;
+  --ash: #8a8580;
+  --ember: #ff5722;
+  --rust: #c1440e;
+  --matcha: #8db580;
+  --paper: #efe8da;
+
+  --radius-xs: 6px;
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 28px;
+  --radius-xl: 40px;
+
+  --font-display: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
+  --font-sans: "Geist", "Inter Display", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", monospace;
+
+  --shadow-soft: 0 1px 2px rgba(10, 10, 10, 0.04), 0 4px 20px rgba(10, 10, 10, 0.06);
+  --shadow-lift: 0 2px 4px rgba(10, 10, 10, 0.05), 0 12px 40px rgba(10, 10, 10, 0.1);
+  --shadow-deep: 0 10px 40px rgba(10, 10, 10, 0.15), 0 2px 8px rgba(10, 10, 10, 0.08);
+}
+
+/* load fonts from Google */
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap");
+
+* { -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  background: var(--bone);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+}
+
+body {
+  /* subtle paper grain */
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(193, 68, 14, 0.04), transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(141, 181, 128, 0.04), transparent 40%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Grain overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+.font-mono { font-family: var(--font-mono); }
+
+/* Editorial serif italic style */
+.editorial {
+  font-family: var(--font-display);
+  font-style: italic;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+
+/* Buttons — physical, warm, with depth */
+.btn-primary {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 16px 24px;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s;
+  box-shadow: var(--shadow-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+.btn-primary:active { transform: scale(0.97); }
+.btn-primary:hover { box-shadow: var(--shadow-lift); }
+
+.btn-ember {
+  background: var(--ember);
+  color: white;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid rgba(10, 10, 10, 0.12);
+  padding: 14px 20px;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.btn-ghost:hover { background: rgba(10, 10, 10, 0.04); }
+
+/* Card — tactile, paper-like */
+.card {
+  background: var(--cream);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(10, 10, 10, 0.06);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+/* Input fields */
+.input {
+  width: 100%;
+  background: var(--cream);
+  border: 1px solid rgba(10, 10, 10, 0.1);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  font-size: 16px;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 4px rgba(10, 10, 10, 0.06);
+}
+
+/* Chip */
+.chip {
+  padding: 8px 14px;
+  background: var(--cream);
+  border: 1px solid rgba(10, 10, 10, 0.1);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.chip-active {
+  background: var(--ink);
+  color: var(--cream);
+  border-color: var(--ink);
+}
+
+/* Leaflet map container */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  font-family: var(--font-sans) !important;
+  background: var(--paper) !important;
+}
+.leaflet-control-attribution { font-size: 9px !important; background: rgba(255,255,255,0.7) !important; }
+.leaflet-control-zoom a {
+  background: var(--cream) !important;
+  color: var(--ink) !important;
+  border-color: rgba(10,10,10,0.1) !important;
+}
+
+/* Pulse ring for "live" status */
+.pulse-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--matcha);
+}
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--matcha);
+  opacity: 0.4;
+  animation: pulseRing 2s infinite;
+}
+@keyframes pulseRing {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Page transitions */
+.page-enter {
+  animation: pageEnter 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Staggered child reveal */
+.stagger > * {
+  opacity: 0;
+  animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger > *:nth-child(2) { animation-delay: 0.12s; }
+.stagger > *:nth-child(3) { animation-delay: 0.19s; }
+.stagger > *:nth-child(4) { animation-delay: 0.26s; }
+.stagger > *:nth-child(5) { animation-delay: 0.33s; }
+.stagger > *:nth-child(6) { animation-delay: 0.4s; }
+.stagger > *:nth-child(7) { animation-delay: 0.47s; }
+.stagger > *:nth-child(8) { animation-delay: 0.54s; }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Safe area for mobile notches */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Tablet & Desktop responsive adjustments */
+@media (min-width: 768px) {
+  .safe-top { padding-top: 0; }
+  .safe-bottom { padding-bottom: 0; }
+  
+  .btn-primary {
+    width: auto;
+  }
+  
+  .btn-ghost {
+    width: auto;
+  }
+}
+
+/* Desktop adjustments */
+@media (min-width: 1024px) {
+  body {
+    background-attachment: scroll;
+  }
+  
+  .page-enter {
+    animation: none;
+  }
+  
+  .btn-primary {
+    padding: 14px 32px;
+    font-size: 16px;
+  }
+  
+  .card {
+    border-radius: 24px;
+  }
+  
+  .input {
+    padding: 14px 20px;
+    font-size: 16px;
+  }
+}
+
+/* Hide scrollbar but allow scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Bottom sheet */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.5);
+  backdrop-filter: blur(8px);
+  z-index: 60;
+  animation: fadeIn 0.25s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bone);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 61;
+  animation: sheetUp 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  background: rgba(10,10,10,0.15);
+  border-radius: 99px;
+  margin: 0 auto 16px;
+}
+
+/* Map pin steam animation */
+@keyframes steam {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateY(-8px) scale(1.1); opacity: 0.8; }
+}
