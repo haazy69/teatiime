@@ -1,0 +1,12 @@
+{
+  "name": "TeaTime - Find People Nearby",
+  "short_name": "TeaTime",
+  "description": "Connect with people nearby for tea, coffee, and activities",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#000000",
+  "background_color": "#fffbf5",
+  "categories": ["social", "lifestyle"]
+}

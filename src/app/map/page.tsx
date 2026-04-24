@@ -3,63 +3,142 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import BottomNav from "@/components/BottomNav";
-import { Plus, LogOut, MapPin, X } from "lucide-react";
+import {
+  Plus,
+  LogOut,
+  X,
+  Loader,
+  AlertCircle,
+  CheckCircle,
+  RefreshCw,
+  MapPin,
+} from "lucide-react";
+import dynamic from "next/dynamic";
 
-interface NearbyUser {
+// Dynamically import Leaflet map to avoid SSR issues
+const MapComponent = dynamic(() => import("@/components/MapComponent"), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-xl overflow-hidden mb-6 h-64 sm:h-96 bg-gray-100 flex items-center justify-center border-2 border-gray-200">
+      <div className="text-center">
+        <Loader className="w-8 h-8 animate-spin text-ink mx-auto mb-2" />
+        <p className="text-smoke text-sm">Loading map...</p>
+      </div>
+    </div>
+  ),
+});
+
+interface NearbyRequest {
   id: string;
   activity: string;
-  distance: number;
+  distance_m: number;
+  note: string | null;
   created_at: string;
+  creator_id: string;
+  participant_count: number;
 }
 
 export default function MapPage() {
   const router = useRouter();
-  const [nearbyRequests, setNearbyRequests] = useState<NearbyUser[]>([]);
+  const [nearbyRequests, setNearbyRequests] = useState<NearbyRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [activity, setActivity] = useState("coffee");
   const [note, setNote] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState(false);
 
-  // Fetch nearby requests
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+
+  // Initialize app
   useEffect(() => {
-    const fetchNearbyRequests = async () => {
+    const initializeApp = async () => {
       try {
+        setError(null);
         const supabase = createClient();
-        const { data } = await supabase
+
+        // Get user
+        const { data: { user: userData } } = await supabase.auth.getUser();
+        if (!userData) {
+          router.push("/auth/signin");
+          return;
+        }
+        setUser(userData);
+
+        // Get location
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setUserLocation({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+              });
+            },
+            (err) => {
+              console.warn("Location error:", err);
+              // Default location if geolocation fails
+              setUserLocation({ lat: 28.6139, lng: 77.209 }); // Delhi
+            }
+          );
+        } else {
+          setUserLocation({ lat: 28.6139, lng: 77.209 });
+        }
+
+        // Fetch requests
+        const { data, error: fetchError } = await supabase
           .from("requests")
-          .select("id, activity, distance_m, created_at")
+          .select(
+            `*,
+             participant_count:request_participants(count)`
+          )
           .eq("status", "open")
           .order("created_at", { ascending: false })
           .limit(20);
+
+        if (fetchError) {
+          setError("Failed to load requests");
+          return;
+        }
 
         if (data) {
           setNearbyRequests(
             data.map((r: any) => ({
               ...r,
-              distance: Math.round(r.distance_m / 100) * 100,
+              participant_count: r.participant_count?.[0]?.count || 0,
             }))
           );
         }
+
+        setLoading(false);
       } catch (err) {
-        console.error("Error fetching nearby requests:", err);
-      } finally {
+        setError("An error occurred");
+        console.error("Error:", err);
         setLoading(false);
       }
     };
 
-    fetchNearbyRequests();
-  }, []);
+    initializeApp();
+  }, [router]);
 
-  // Create new request
-  const handleCreateRequest = async () => {
+  const handleCreateRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError(null);
+
     if (!activity) {
-      alert("Please select an activity");
+      setCreateError("Please select an activity");
       return;
     }
 
     try {
       setCreating(true);
+
       const response = await fetch("/api/requests/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -70,192 +149,308 @@ export default function MapPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to create request");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to create request");
       }
 
-      // Reset form and close modal
-      setActivity("coffee");
-      setNote("");
-      setShowCreateForm(false);
+      setCreateSuccess(true);
 
-      // Refresh nearby requests
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("requests")
-        .select("id, activity, distance_m, created_at")
-        .eq("status", "open")
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (data) {
-        setNearbyRequests(
-          data.map((r: any) => ({
-            ...r,
-            distance: Math.round(r.distance_m / 100) * 100,
-          }))
-        );
-      }
+      setTimeout(() => {
+        setActivity("coffee");
+        setNote("");
+        setCreateError(null);
+        setCreateSuccess(false);
+        setShowCreateModal(false);
+        refreshRequests();
+      }, 1500);
     } catch (err) {
-      console.error("Error creating request:", err);
-      alert("Failed to create request");
+      console.error("Error:", err);
+      setCreateError(err instanceof Error ? err.message : "Failed to create");
     } finally {
       setCreating(false);
     }
   };
 
-  // Logout handler
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/auth/signin");
+  const refreshRequests = async () => {
+    try {
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from("requests")
+        .select(
+          `*,
+           participant_count:request_participants(count)`
+        )
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (fetchError) {
+        setError("Failed to refresh");
+        return;
+      }
+
+      if (data) {
+        setNearbyRequests(
+          data.map((r: any) => ({
+            ...r,
+            participant_count: r.participant_count?.[0]?.count || 0,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Error:", err);
+    }
   };
 
-  const activityEmojis: Record<string, string> = {
-    tea: "🍵",
-    coffee: "☕",
-    smoke: "🚬",
-    lunch: "🍱",
-    snacks: "🥟",
-    walk: "🚶",
+  const handleLogout = async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push("/auth/signin");
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
+
+  const handleJoinRequest = async (requestId: string) => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase.from("request_participants").insert({
+        request_id: requestId,
+        user_id: user.id,
+      });
+
+      if (error) throw error;
+      alert("Joined! 🎉");
+      refreshRequests();
+    } catch (err) {
+      console.error("Error:", err);
+      alert("Failed to join");
+    }
+  };
+
+  const getActivityEmoji = (activity: string) => {
+    const emojis: Record<string, string> = {
+      tea: "🍵",
+      coffee: "☕",
+      smoke: "🚬",
+      lunch: "🍱",
+      snacks: "🥟",
+      walk: "🚶",
+    };
+    return emojis[activity] || "☕";
   };
 
   return (
-    <main className="min-h-screen pb-24 px-4 pt-4 safe-top">
-      <div className="max-w-[440px] mx-auto">
-        {/* Header with logout */}
-        <div className="flex items-center justify-between mb-6">
+    <main className="min-h-screen bg-cream pb-24">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-cream border-b border-smoke/10 px-4 py-4">
+        <div className="max-w-[600px] mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-display tracking-tight text-ink">Nearby</h1>
-            <p className="text-smoke text-sm">People looking for activities</p>
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-ink">
+              TeaTime
+            </h1>
+            <p className="text-smoke text-xs sm:text-sm">Find people nearby</p>
           </div>
           <button
             onClick={handleLogout}
-            className="p-2 hover:bg-smoke/10 rounded transition-colors"
+            className="p-2 hover:bg-smoke/10 rounded-lg transition-colors"
             title="Logout"
-            aria-label="Logout"
           >
             <LogOut className="w-5 h-5 text-smoke" />
           </button>
         </div>
-
-        {/* Map placeholder */}
-        <div className="card h-64 mb-6 flex items-center justify-center bg-gradient-to-br from-smoke/5 to-smoke/10 relative">
-          <div className="text-center">
-            <MapPin className="w-12 h-12 text-smoke/30 mx-auto mb-2" />
-            <p className="text-smoke text-sm">Map will render here</p>
-            <p className="text-ash text-xs">Showing {nearbyRequests.length} nearby requests</p>
-          </div>
-        </div>
-
-        {/* Floating Create Button */}
-        <div className="fixed bottom-32 right-4 z-30">
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="flex items-center gap-2 bg-ink text-cream px-6 py-3 rounded-full font-medium shadow-lg hover:bg-ink/90 transition-all active:scale-95"
-            aria-label="Create new request"
-          >
-            <Plus className="w-5 h-5" />
-            Create Request
-          </button>
-        </div>
-
-        {/* Nearby Requests List */}
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ink mx-auto"></div>
-            <p className="text-smoke text-sm mt-2">Loading nearby requests...</p>
-          </div>
-        ) : nearbyRequests.length === 0 ? (
-          <div className="card p-8 text-center">
-            <p className="text-smoke text-sm mb-2">No requests nearby yet.</p>
-            <p className="text-ash text-xs">Create one to get started!</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <h2 className="text-sm font-medium text-smoke px-2">Available Now</h2>
-            {nearbyRequests.map((req) => (
-              <div
-                key={req.id}
-                className="card p-4 cursor-pointer hover:bg-smoke/5 transition"
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 rounded-full bg-ink flex items-center justify-center text-cream text-lg flex-shrink-0">
-                    {activityEmojis[req.activity] || "☕"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-ink capitalize">{req.activity}</p>
-                    <p className="text-xs text-ash">{req.distance}m away</p>
-                  </div>
-                </div>
-                <button className="w-full text-sm font-medium text-matcha hover:bg-matcha/5 py-2 rounded transition">
-                  Join
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Create Request Modal */}
-      {showCreateForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-end z-50 animate-in fade-in duration-200">
-          <div className="card m-4 w-full max-w-[440px] mx-auto p-6 rounded-t-3xl space-y-6 animate-in slide-in-from-bottom duration-300">
+      {/* Content */}
+      <div className="max-w-[600px] mx-auto px-4 py-4">
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <p className="text-red-700 text-sm">{error}</p>
+          </div>
+        )}
+
+        {/* Map */}
+        {userLocation && (
+          <MapComponent
+            userLocation={userLocation}
+            requests={nearbyRequests}
+            getActivityEmoji={getActivityEmoji}
+          />
+        )}
+
+        {/* Add Request Button */}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="w-full mb-6 flex items-center justify-center gap-2 bg-gradient-to-r from-ink to-ink/90 text-cream px-6 py-4 rounded-xl font-medium shadow-lg hover:shadow-xl active:scale-95 transition-all min-h-[44px]"
+        >
+          <Plus className="w-5 h-5" />
+          <span className="hidden sm:inline">Add New Request</span>
+          <span className="sm:hidden">Add Request</span>
+        </button>
+
+        {/* Requests List */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-display font-bold text-ink">
+              Available Now
+            </h2>
+            <button
+              onClick={refreshRequests}
+              className="p-2 hover:bg-smoke/10 rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-4 h-4 text-smoke" />
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-12">
+              <Loader className="w-8 h-8 animate-spin text-ink mx-auto mb-2" />
+              <p className="text-smoke text-sm">Loading requests...</p>
+            </div>
+          ) : nearbyRequests.length === 0 ? (
+            <div className="card p-8 text-center">
+              <MapPin className="w-10 h-10 text-smoke/30 mx-auto mb-2" />
+              <p className="text-smoke text-sm font-medium">No requests nearby</p>
+              <p className="text-ash text-xs">Be the first to create one!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {nearbyRequests.map((req) => (
+                <div key={req.id} className="card p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-ink flex items-center justify-center text-cream text-lg flex-shrink-0">
+                      {getActivityEmoji(req.activity)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-ink capitalize">
+                        {req.activity}
+                      </p>
+                      <p className="text-xs text-ash">
+                        {Math.round(req.distance_m / 100) * 100}m away •{" "}
+                        {req.participant_count} joined
+                      </p>
+                    </div>
+                  </div>
+                  {req.note && (
+                    <p className="text-xs text-smoke mb-2 line-clamp-2">
+                      💬 {req.note}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => handleJoinRequest(req.id)}
+                    className="w-full text-sm font-medium text-matcha hover:bg-matcha/5 py-2 rounded transition-colors"
+                  >
+                    Join Request
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center sm:justify-center p-4">
+          <div
+            className="absolute inset-0 -z-10"
+            onClick={() => !creating && setShowCreateModal(false)}
+          />
+
+          <div className="card w-full sm:max-w-[440px] rounded-t-2xl sm:rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-display">Create Request</h2>
+              <h2 className="text-2xl font-display font-bold text-ink">Create</h2>
               <button
-                onClick={() => setShowCreateForm(false)}
-                className="p-2 hover:bg-smoke/10 rounded transition-colors"
-                aria-label="Close"
+                onClick={() => !creating && setShowCreateModal(false)}
+                className="p-2 hover:bg-smoke/10 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-smoke" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-ink mb-2">Activity</label>
-                <select
-                  value={activity}
-                  onChange={(e) => setActivity(e.target.value)}
-                  className="w-full px-3 py-2 border border-smoke/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-ink/20"
-                >
-                  <option value="coffee">☕ Coffee</option>
-                  <option value="tea">🍵 Tea</option>
-                  <option value="lunch">🍱 Lunch</option>
-                  <option value="snacks">🥟 Snacks</option>
-                  <option value="walk">🚶 Walk</option>
-                  <option value="smoke">🚬 Smoke Break</option>
-                </select>
+            {createSuccess ? (
+              <div className="text-center py-8">
+                <CheckCircle className="w-12 h-12 text-matcha mx-auto mb-3" />
+                <h3 className="font-semibold text-ink mb-1">Created! 🎉</h3>
+                <p className="text-sm text-smoke">People will see your request</p>
               </div>
+            ) : (
+              <>
+                {createError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    {createError}
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-sm font-medium text-ink mb-2">Note (Optional)</label>
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Add a note... e.g., 'Let's meet at the park'"
-                  maxLength={500}
-                  className="w-full px-3 py-2 border border-smoke/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-ink/20 resize-none h-20 text-sm"
-                />
-                <p className="text-xs text-ash mt-1">{note.length}/500</p>
-              </div>
-            </div>
+                <form onSubmit={handleCreateRequest} className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-ink mb-2">
+                      Activity
+                    </label>
+                    <select
+                      value={activity}
+                      onChange={(e) => setActivity(e.target.value)}
+                      disabled={creating}
+                      className="w-full px-3 py-2 border border-smoke/20 rounded-lg bg-cream text-ink"
+                    >
+                      <option value="coffee">☕ Coffee</option>
+                      <option value="tea">🍵 Tea</option>
+                      <option value="lunch">🍱 Lunch</option>
+                      <option value="snacks">🥟 Snacks</option>
+                      <option value="walk">🚶 Walk</option>
+                      <option value="smoke">🚬 Smoke</option>
+                    </select>
+                  </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowCreateForm(false)}
-                className="flex-1 px-4 py-3 border border-smoke/20 rounded-lg font-medium hover:bg-smoke/5 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateRequest}
-                disabled={creating}
-                className="flex-1 px-4 py-3 bg-ink text-cream rounded-lg font-medium hover:bg-ink/90 disabled:opacity-50 transition"
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-ink mb-2">
+                      Note (optional)
+                    </label>
+                    <textarea
+                      value={note}
+                      onChange={(e) => setNote(e.target.value.slice(0, 200))}
+                      placeholder="What's on your mind?"
+                      maxLength={200}
+                      disabled={creating}
+                      className="w-full px-3 py-2 border border-smoke/20 rounded-lg bg-cream text-ink h-16 resize-none"
+                    />
+                    <p className="text-xs text-ash mt-1">{note.length}/200</p>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateModal(false)}
+                      disabled={creating}
+                      className="flex-1 px-3 py-2 border border-smoke/20 rounded-lg font-medium text-ink hover:bg-smoke/5 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={creating}
+                      className="flex-1 px-3 py-2 bg-ink text-cream rounded-lg font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {creating ? (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin" />
+                          Creating
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4" />
+                          Create
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}

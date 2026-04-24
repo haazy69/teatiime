@@ -1,46 +1,73 @@
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
   theme: {
     extend: {
-      fontFamily: {
-        display: ["var(--font-display)", "serif"],
-        sans: ["var(--font-sans)", "system-ui"],
-      },
       colors: {
-        ink: "#0a0a0a",
-        bone: "#f5f1ea",
-        cream: "#faf6ee",
-        ember: "#ff5722",
-        matcha: "#8db580",
-        rust: "#c1440e",
-        smoke: "#3a3a3a",
+        // Custom colors for TeaTime
+        ink: "#000000",
+        cream: "#FFFBF5",
+        smoke: "#999999",
+        ash: "#CCCCCC",
+        matcha: "#4CAF50",
       },
-      animation: {
-        "slide-up": "slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1)",
-        "fade-in": "fadeIn 0.4s ease-out",
-        "pulse-ring": "pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "steam": "steam 3s ease-in-out infinite",
+      fontFamily: {
+        // Use system fonts (no external imports needed)
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          "Roboto",
+          '"Helvetica Neue"',
+          "Arial",
+          '"Noto Sans"',
+          "sans-serif",
+        ],
+        mono: [
+          '"SF Mono"',
+          "Monaco",
+          '"Cascadia Code"',
+          '"Roboto Mono"',
+          "Courier",
+          "monospace",
+        ],
+        // Display font for headings
+        display: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          "Roboto",
+          '"Helvetica Neue"',
+          "Arial",
+          "sans-serif",
+        ],
       },
-      keyframes: {
-        slideUp: {
-          "0%": { transform: "translateY(20px)", opacity: "0" },
-          "100%": { transform: "translateY(0)", opacity: "1" },
-        },
-        fadeIn: {
-          "0%": { opacity: "0" },
-          "100%": { opacity: "1" },
-        },
-        pulseRing: {
-          "0%": { transform: "scale(0.8)", opacity: "0.8" },
-          "100%": { transform: "scale(2.5)", opacity: "0" },
-        },
-        steam: {
-          "0%, 100%": { transform: "translateY(0) scale(1)", opacity: "0.4" },
-          "50%": { transform: "translateY(-8px) scale(1.1)", opacity: "0.8" },
-        },
+      fontSize: {
+        xs: ["12px", { lineHeight: "16px" }],
+        sm: ["14px", { lineHeight: "20px" }],
+        base: ["16px", { lineHeight: "24px" }],
+        lg: ["18px", { lineHeight: "28px" }],
+        xl: ["20px", { lineHeight: "28px" }],
+        "2xl": ["24px", { lineHeight: "32px" }],
+        "3xl": ["30px", { lineHeight: "36px" }],
+        "4xl": ["36px", { lineHeight: "40px" }],
+      },
+      borderRadius: {
+        DEFAULT: "8px",
+      },
+      spacing: {
+        safe: "env(safe-area-inset-bottom)",
       },
     },
   },
   plugins: [],
 };
+
+export default config;
