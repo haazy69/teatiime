@@ -1,26 +1,45 @@
 "use client";
 import { useState, useEffect } from "react";
-import { unstable_noStore } from "next/cache";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase-browser";
 import { useLocation } from "@/hooks/useLocation";
 import { useRealtimeNotifications } from "@/hooks/useRealtimeNotifications";
-import MapView from "@/components/MapView";
 import CreateRequestSheet from "@/components/CreateRequestSheet";
 import IncomingRequestPopup from "@/components/IncomingRequestPopup";
 import BottomNav from "@/components/BottomNav";
-import { Plus, Loader } from "lucide-react";
+import ChatSheet from "@/components/ChatSheet";
+import { Plus, Loader, MessageCircle } from "lucide-react";
 import type { NearbyRequest, Profile } from "@/types";
 
-unstable_noStore();
+// Dynamic import for MapView to prevent SSR issues with Leaflet
+const MapView = dynamic(() => import("@/components/MapView"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-screen flex items-center justify-center bg-paper">
+      <div className="text-center">
+        <Loader className="w-8 h-8 animate-spin text-ink mx-auto mb-3" />
+        <p className="text-sm text-smoke">Loading map...</p>
+      </div>
+    </div>
+  ),
+});
 
 export default function HomePage() {
   const { coords, loading: locationLoading } = useLocation();
   const [requests, setRequests] = useState<NearbyRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<NearbyRequest | null>(null);
   const [showCreateSheet, setShowCreateSheet] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [requestsLoading, setRequestsLoading] = useState(false);
+
+  // Chat state
+  const [showChat, setShowChat] = useState(false);
+  const [chatPartner, setChatPartner] = useState<{
+    id: string;
+    name: string;
+    requestId: string;
+    activity: string;
+  } | null>(null);
 
   const { notifications, latest, dismissLatest } = useRealtimeNotifications(profile?.id || null);
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -67,13 +86,11 @@ export default function HomePage() {
     };
 
     fetchRequests();
-
-    // refresh every 10 seconds
     const id = setInterval(fetchRequests, 10_000);
     return () => clearInterval(id);
   }, [coords]);
 
-  // realtime updates to requests
+  // realtime updates
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -84,7 +101,6 @@ export default function HomePage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "requests" },
         () => {
-          // refetch on any change
           if (coords) {
             supabase
               .rpc("requests_nearby", {
@@ -105,18 +121,87 @@ export default function HomePage() {
     };
   }, [coords, profile?.id]);
 
-  // find request object for incoming notification
   const latestRequest = latest?.request_id ? requests.find((r) => r.id === latest.request_id) : null;
 
+  const activityEmojis: Record<string, string> = {
+    tea: "🍵",
+    coffee: "☕",
+    lunch: "🍱",
+    snacks: "🥟",
+    smoke: "🚬",
+    walk: "🚶",
+  };
+
+  // Handler to open chat
+  const handleOpenChat = () => {
+    if (!selectedRequest || !profile?.id) return;
+    
+    setChatPartner({
+      id: selectedRequest.creator_id,
+      name: selectedRequest.creator_name,
+      requestId: selectedRequest.id,
+      activity: selectedRequest.activity,
+    });
+    setShowChat(true);
+    setSelectedRequest(null);
+  };
+
+  // Handler to join request
+  const handleJoinRequest = async () => {
+    if (!selectedRequest || !profile?.id) return;
+
+    try {
+      const supabase = createClient();
+      
+      // Check if already joined
+      const { data: existing } = await supabase
+        .from("request_participants")
+        .select("id")
+        .eq("request_id", selectedRequest.id)
+        .eq("user_id", profile.id)
+        .single();
+
+      if (existing) {
+        alert("You've already joined this request!");
+        return;
+      }
+
+      // Join the request
+      const { error } = await supabase
+        .from("request_participants")
+        .insert({
+          request_id: selectedRequest.id,
+          user_id: profile.id,
+        });
+
+      if (error) throw error;
+
+      alert("Joined! 🎉 You can now chat with " + selectedRequest.creator_name);
+      
+      // Auto-open chat after joining
+      setChatPartner({
+        id: selectedRequest.creator_id,
+        name: selectedRequest.creator_name,
+        requestId: selectedRequest.id,
+        activity: selectedRequest.activity,
+      });
+      setShowChat(true);
+      setSelectedRequest(null);
+    } catch (err) {
+      console.error("Error joining:", err);
+      alert("Failed to join request");
+    }
+  };
+
   return (
-    <main className="h-screen grid md:grid-cols-3 gap-0">
-      {/* Map - takes 2 columns on desktop */}
-      <div className="md:col-span-2 relative h-screen md:h-auto">
+    <main className="h-screen relative">
+      {/* Map */}
+      <div className="absolute inset-0">
         {locationLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-paper z-40">
+          <div className="h-full flex items-center justify-center bg-gray-100">
             <div className="text-center">
-              <Loader className="w-8 h-8 animate-spin text-ink mx-auto mb-3" />
-              <p className="text-sm text-smoke">Getting your location...</p>
+              <Loader className="w-8 h-8 animate-spin text-black mx-auto mb-3" />
+              <p className="text-sm text-gray-600">Getting your location...</p>
             </div>
           </div>
         ) : (
@@ -126,132 +211,85 @@ export default function HomePage() {
             onRequestClick={setSelectedRequest}
           />
         )}
+      </div>
 
-        {/* create button - floating */}
-        <button
-          onClick={() => setShowCreateSheet(true)}
-          className="absolute bottom-24 md:bottom-4 right-4 z-40 w-16 h-16 rounded-full bg-ember text-cream shadow-deep flex items-center justify-center hover:shadow-lift transition-shadow active:scale-95"
-        >
-          <Plus className="w-7 h-7" />
-        </button>
+      {/* CREATE REQUEST BUTTON */}
+      <button
+        onClick={() => setShowCreateSheet(true)}
+        className="fixed bottom-24 right-6 z-[100] flex items-center gap-2 bg-black text-white px-5 py-4 rounded-full shadow-2xl hover:bg-gray-800 transition-all active:scale-95"
+        style={{
+          boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+        }}
+      >
+        <Plus className="w-6 h-6" />
+        <span className="font-semibold">Create Request</span>
+      </button>
 
-        {/* loading indicator */}
-        {requestsLoading && (
-          <div className="absolute top-4 left-4 z-40 card px-3 py-2 flex items-center gap-2">
-            <Loader className="w-3 h-3 animate-spin text-ink" />
-            <span className="text-xs font-medium text-smoke">Updating...</span>
-          </div>
-        )}
+      {/* loading indicator */}
+      {requestsLoading && (
+        <div className="fixed top-4 left-4 z-50 bg-white px-3 py-2 rounded-full shadow-lg flex items-center gap-2">
+          <Loader className="w-3 h-3 animate-spin text-black" />
+          <span className="text-xs font-medium text-gray-700">Updating...</span>
+        </div>
+      )}
 
-        {/* selected request detail card */}
-        {selectedRequest && (
-          <div className="absolute bottom-20 left-4 right-4 z-40 card p-4 animate-slide-up md:hidden">
-            <div className="mb-3">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center text-cream text-lg">
-                  {["tea", "coffee", "lunch", "snacks", "smoke", "walk"].includes(selectedRequest.activity)
-                    ? (
-                        {
-                          tea: "🍵",
-                          coffee: "☕",
-                          lunch: "🍱",
-                          snacks: "🥟",
-                          smoke: "🚬",
-                          walk: "🚶",
-                        } as Record<string, string>
-                      )[selectedRequest.activity]
-                    : "☕"}
-                </div>
-                <p className="font-medium text-ink">{selectedRequest.creator_name}</p>
+      {/* selected request detail card */}
+      {selectedRequest && (
+        <div className="fixed bottom-32 left-4 right-4 z-50 bg-white rounded-2xl shadow-2xl p-4 max-w-md mx-auto">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-white text-lg">
+                {activityEmojis[selectedRequest.activity] || "☕"}
               </div>
-              {selectedRequest.note && <p className="text-sm text-smoke">{selectedRequest.note}</p>}
+              <div>
+                <p className="font-semibold text-black">{selectedRequest.creator_name}</p>
+                <p className="text-xs text-gray-500 capitalize">{selectedRequest.activity}</p>
+              </div>
             </div>
-            <p className="text-xs text-ash mb-3">
-              {Math.round(selectedRequest.distance_m)}m away • {selectedRequest.participant_count} joined
-            </p>
             <button
-              onClick={() => {
-                setSelectedRequest(null);
-                setShowCreateSheet(false);
-              }}
-              className="btn-primary btn-ember w-full text-sm"
+              onClick={() => setSelectedRequest(null)}
+              className="text-gray-400 hover:text-gray-600"
             >
-              Join them →
+              ✕
             </button>
           </div>
-        )}
-      </div>
 
-      {/* Sidebar - requests list on desktop */}
-      <div className="hidden md:flex flex-col bg-bone border-l border-ink/10 h-screen">
-        {/* Header */}
-        <div className="p-4 border-b border-ink/10">
-          <h2 className="font-display text-lg">Nearby</h2>
-          <p className="text-xs text-ash mt-1">{requests.length} active</p>
-        </div>
-
-        {/* Requests list */}
-        <div className="overflow-y-auto p-4 space-y-3 flex-1 no-scrollbar">
-          {requests.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-sm text-ash">No one nearby yet</p>
-              <p className="text-xs text-ash/60 mt-2">Try creating a request to start</p>
-            </div>
-          ) : (
-            requests.map((req) => (
-              <div
-                key={req.id}
-                onClick={() => setSelectedRequest(req)}
-                className={`card p-3 cursor-pointer transition-all ${
-                  selectedRequest?.id === req.id
-                    ? "ring-2 ring-ember bg-cream"
-                    : "hover:shadow-lift"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-ink flex items-center justify-center text-cream text-sm flex-shrink-0">
-                    {["tea", "coffee", "lunch", "snacks", "smoke", "walk"].includes(req.activity)
-                      ? (
-                          {
-                            tea: "🍵",
-                            coffee: "☕",
-                            lunch: "🍱",
-                            snacks: "🥟",
-                            smoke: "🚬",
-                            walk: "🚶",
-                          } as Record<string, string>
-                        )[req.activity]
-                      : "☕"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-ink truncate">{req.creator_name}</p>
-                    <p className="text-xs text-ash truncate">{Math.round(req.distance_m)}m away</p>
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      <span className="chip text-xs">{req.activity}</span>
-                      {req.participant_count > 0 && (
-                        <span className="chip text-xs bg-matcha/10 text-matcha">
-                          +{req.participant_count}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
+          {selectedRequest.note && (
+            <p className="text-sm text-gray-600 mb-2">💬 {selectedRequest.note}</p>
           )}
+          <p className="text-xs text-gray-500 mb-3">
+            {Math.round(selectedRequest.distance_m)}m away • {selectedRequest.participant_count} joined
+          </p>
+
+          {/* Action Buttons - Join + Chat */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleJoinRequest}
+              className="flex-1 bg-black text-white py-3 rounded-full font-medium hover:bg-gray-800 transition-colors"
+            >
+              Join Request
+            </button>
+            <button
+              onClick={handleOpenChat}
+              className="px-4 py-3 bg-white border-2 border-black text-black rounded-full font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+              title="Chat with creator"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Chat
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Bottom nav - mobile only */}
-      <BottomNav className="md:hidden" unreadCount={unreadCount} />
+      {/* Bottom nav */}
+      <BottomNav unreadCount={unreadCount} />
 
-      {/* sheets + popups */}
+      {/* Create Request Sheet */}
       <CreateRequestSheet
         isOpen={showCreateSheet}
         onClose={() => setShowCreateSheet(false)}
         userCoords={coords}
         onSuccess={() => {
-          // refresh requests
           if (coords) {
             const supabase = createClient();
             supabase
@@ -267,11 +305,28 @@ export default function HomePage() {
         }}
       />
 
+      {/* Incoming Request Popup */}
       <IncomingRequestPopup
         notification={latest}
         request={latestRequest}
         onDismiss={dismissLatest}
       />
+
+      {/* Chat Sheet */}
+      {showChat && chatPartner && profile && (
+        <ChatSheet
+          isOpen={showChat}
+          onClose={() => {
+            setShowChat(false);
+            setChatPartner(null);
+          }}
+          requestId={chatPartner.requestId}
+          otherUserId={chatPartner.id}
+          otherUserName={chatPartner.name}
+          currentUserId={profile.id}
+          activity={chatPartner.activity}
+        />
+      )}
     </main>
   );
 }

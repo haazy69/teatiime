@@ -1,104 +1,141 @@
 "use client";
-import dynamic from "next/dynamic";
-import { useEffect, useState, useRef } from "react";
+
+import { useEffect, useRef } from "react";
 import L from "leaflet";
-import type { Coords } from "@/hooks/useLocation";
+import "leaflet/dist/leaflet.css";
 import type { NearbyRequest } from "@/types";
 
-// Lazy load to avoid SSR issues
-const Map = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
+// Fix Leaflet icon issue in Next.js
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
 interface MapViewProps {
-  userCoords?: Coords | null;
+  userCoords: { lat: number; lng: number } | null;
   requests: NearbyRequest[];
   onRequestClick?: (request: NearbyRequest) => void;
 }
 
-// Custom pin icons
-const createIcon = (emoji: string) => {
-  const html = `
-    <div style="
-      width: 44px;
-      height: 44px;
-      background: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      box-shadow: 0 4px 12px rgba(10, 10, 10, 0.15);
-      border: 2px solid #0a0a0a;
-    ">
-      ${emoji}
-    </div>
-  `;
-
-  return L.divIcon({ html, iconSize: [44, 44], iconAnchor: [22, 22], popupAnchor: [0, -22] });
-};
-
-const userIcon = createIcon("📍");
-
-const activityEmojis: Record<string, string> = {
-  tea: "🍵",
-  coffee: "☕",
-  smoke: "🚬",
-  lunch: "🍱",
-  snacks: "🥟",
-  walk: "🚶",
-};
-
 export default function MapView({ userCoords, requests, onRequestClick }: MapViewProps) {
-  const [mounted, setMounted] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    if (!mapRef.current || !userCoords) return;
 
-  if (!mounted || !userCoords) {
-    return (
-      <div className="w-full h-full bg-paper flex items-center justify-center text-smoke text-sm">
-        Loading map...
-      </div>
+    // Clean up previous instance
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
+
+    // Create new map
+    const map = L.map(mapRef.current).setView(
+      [userCoords.lat, userCoords.lng],
+      14
     );
-  }
+
+    // Add OpenStreetMap tiles
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
+
+    // User marker
+    const userIcon = L.divIcon({
+      html: `
+        <div style="
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: #3b82f6;
+          border: 3px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></div>
+      `,
+      iconSize: [24, 24],
+      className: "user-marker",
+    });
+
+    L.marker([userCoords.lat, userCoords.lng], { icon: userIcon })
+      .addTo(map)
+      .bindPopup("<strong>You are here</strong>");
+
+    // Request markers
+    requests.forEach((req) => {
+      const lat = (req as any).lat;
+      const lng = (req as any).lng;
+
+      if (lat && lng) {
+        const activityEmojis: Record<string, string> = {
+          tea: "🍵",
+          coffee: "☕",
+          lunch: "🍱",
+          snacks: "🥟",
+          smoke: "🚬",
+          walk: "🚶",
+        };
+
+        const requestIcon = L.divIcon({
+          html: `
+            <div style="
+              width: 36px;
+              height: 36px;
+              border-radius: 50%;
+              background: #000000;
+              color: white;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 18px;
+              border: 2px solid white;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+              cursor: pointer;
+            ">
+              ${activityEmojis[req.activity] || "☕"}
+            </div>
+          `,
+          iconSize: [36, 36],
+          className: "request-marker",
+        });
+
+        const marker = L.marker([lat, lng], { icon: requestIcon })
+          .addTo(map)
+          .bindPopup(
+            `<div style="font-family: system-ui;">
+              <strong style="text-transform: capitalize;">${req.activity}</strong>
+              <br><small>${req.creator_name}</small>
+              ${req.note ? `<br><small>${req.note}</small>` : ""}
+            </div>`
+          );
+
+        if (onRequestClick) {
+          marker.on("click", () => {
+            onRequestClick(req);
+          });
+        }
+      }
+    });
+
+    mapInstanceRef.current = map;
+
+    // Cleanup
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [userCoords, requests, onRequestClick]);
 
   return (
-    <Map center={[userCoords.lat, userCoords.lng]} zoom={16} className="h-full w-full rounded-2xl overflow-hidden">
-      <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution='&copy; OpenStreetMap'
-        maxZoom={19}
-      />
-
-      {/* your location */}
-      <Marker position={[userCoords.lat, userCoords.lng]} icon={userIcon}>
-        <Popup>
-          <div className="text-xs font-medium">You are here</div>
-        </Popup>
-      </Marker>
-
-      {/* nearby requests */}
-      {requests.map((req) => (
-        <Marker
-          key={req.id}
-          position={[req.lat, req.lng]}
-          icon={createIcon(activityEmojis[req.activity] || "☕")}
-          eventHandlers={{
-            click: () => onRequestClick?.(req),
-          }}
-        >
-          <Popup>
-            <div className="text-center">
-              <p className="font-medium text-sm">{req.creator_name}</p>
-              <p className="text-xs text-smoke">{req.activity}</p>
-              <p className="text-[11px] text-ash mt-1">{Math.round(req.distance_m)}m away</p>
-            </div>
-          </Popup>
-        </Marker>
-      ))}
-    </Map>
+    <div
+      ref={mapRef}
+      className="w-full h-full rounded-xl"
+      style={{ position: "relative", zIndex: 0, minHeight: "400px" }}
+    />
   );
 }

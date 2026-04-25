@@ -1,74 +1,48 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
-  const cookieStore = await cookies()
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
+// GET - Fetch user's own requests
+export async function GET(request: NextRequest) {
   try {
-    const { data: { user } } = await supabase.auth.getUser()
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          },
+        },
+      }
+    );
 
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const { activity, note } = await request.json()
-
-    if (!activity) {
-      return NextResponse.json(
-        { error: 'Activity is required' },
-        { status: 400 }
-      )
-    }
-
-    const expiresAt = new Date()
-    expiresAt.setHours(expiresAt.getHours() + 24)
 
     const { data, error } = await supabase
       .from('requests')
-      .insert({
-        creator_id: user.id,
-        activity,
-        note: note || null,
-        status: 'open',
-        expires_at: expiresAt.toISOString(),
-      })
-      .select()
+      .select('*')
+      .eq('creator_id', user.id)
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data, success: true })
+    return NextResponse.json({ data });
   } catch (err) {
-    console.error('Server error:', err)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: err instanceof Error ? err.message : 'Server error' },
       { status: 500 }
-    )
+    );
   }
 }
